@@ -253,14 +253,14 @@
       wait_for:
         host: 127.0.0.1
         port: "{{ app_port }}"
-        delay: 10
+        delay: 15
         timeout: 120
         state: started
       ignore_errors: yes
       register: port_wait
 
-    - name: Print PM2 logs if app did not start
-      shell: pm2 logs app --lines 100 --nostream
+    - name: Capture PM2 logs if app did not start
+      command: pm2 logs app --lines 100 --nostream
       register: pm2_logs
       when: port_wait is failed
       become: yes
@@ -270,6 +270,24 @@
     - name: Show PM2 logs
       debug:
         msg: "{{ pm2_logs.stdout_lines | default(['No logs captured']) }}"
+      when: port_wait is failed
+
+    - name: Capture app node process info if app did not start
+      shell: |
+        echo "=== PM2 list ===" && pm2 list || true
+        echo "=== PM2 status ===" && pm2 show app || true
+        echo "=== journalctl pm2 ===" && journalctl -u pm2-ubuntu -n 50 --no-pager || true
+        echo "=== node processes ===" && ps aux | grep node || true
+        echo "=== port check ===" && ss -tlnp | grep 3000 || true
+      register: diag_logs
+      when: port_wait is failed
+      become: yes
+      become_user: ubuntu
+      changed_when: false
+
+    - name: Show diagnostic logs
+      debug:
+        msg: "{{ diag_logs.stdout_lines | default(['No diagnostic info captured']) }}"
       when: port_wait is failed
 
     - name: Fail if app did not start
